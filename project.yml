@@ -1,0 +1,50 @@
+name: SalhaScan
+options:
+  bundleIdPrefix: com.salha
+  deploymentTarget:
+    iOS: "15.0"
+targets:
+  SalhaScan:
+    type: application
+    platform: iOS
+    sources:
+      - Sources
+      - Resources
+      - path: web
+        type: folder
+        buildPhase: resources
+    info:
+      path: Info.plist
+      properties:
+        CFBundleDisplayName: "صالحة سكان"
+        CFBundleDevelopmentRegion: ar
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSRequiresIPhoneOS: true
+        UILaunchScreen: {}
+        UIStatusBarStyle: UIStatusBarStyleDarkContent
+        UIViewControllerBasedStatusBarAppearance: false
+        NSCameraUsageDescription: "الكاميرا لازمة لمسح المستندات."
+        NSPhotoLibraryUsageDescription: "لاستيراد الصور من مكتبة الصور وتحويلها إلى مستندات."
+        NSPhotoLibraryAddUsageDescription: "لحفظ الصور المصدّرة في مكتبة الصور."
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.salha.scan
+        PRODUCT_NAME: SalhaScan
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SWIFT_VERSION: "5.0"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        CODE_SIGNING_ALLOWED: "NO"
+        CODE_SIGNING_REQUIRED: "NO"
+        CODE_SIGN_IDENTITY: ""
