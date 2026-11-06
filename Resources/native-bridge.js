@@ -144,6 +144,80 @@
   }
 
   // ------------------------------------------------------------------
+  // 2.5) Google Drive: تسجيل الدخول داخل التطبيق (عميل iOS) + تجديد تلقائي
+  // ------------------------------------------------------------------
+  if (typeof window.gdSignIn === 'function') {
+    var gdScope = (typeof GD_SCOPE !== 'undefined') ? GD_SCOPE : 'https://www.googleapis.com/auth/drive.file';
+    function gdSaveToken(r) {
+      scLs('gd_token', JSON.stringify({ v: r.access_token, exp: Date.now() + (Number(r.expires_in) || 3600) * 1000 }));
+    }
+    function gdErrText(r) {
+      var e = (r && r.error) || '';
+      if (e === 'bad_client') return 'الـ Client ID غير صحيح — يجب أن ينتهي بـ apps.googleusercontent.com (نوع iOS)';
+      if (e === 'canceled') return 'تم إلغاء الربط';
+      if (e === 'invalid_client' || e === 'unauthorized_client') return 'Google رفضت الـ Client ID — تأكد أن نوعه iOS وأن Bundle ID هو com.salha.scan';
+      return 'لم يتم ربط Google Drive' + (e ? ' (' + e + ')' : '');
+    }
+    var silentRefresh = async function () {
+      var cid = gdClientId();
+      if (!cid) return false;
+      try {
+        var r = await native({ cmd: 'googleRefresh', clientId: cid });
+        if (r && r.access_token) { gdSaveToken(r); return true; }
+      } catch (e) { }
+      return false;
+    };
+
+    window.gdSignIn = async function () {
+      var cid = gdClientId();
+      if (!cid) {
+        if (typeof switchMainTab === 'function') switchMainTab('me');
+        showToast('أدخل Client ID أولاً في «أنا» ← Google Drive');
+        return;
+      }
+      if (await silentRefresh()) { showToast('✅ Google Drive مربوط'); gdShowSettings(); setTimeout(gdSync, 500); return; }
+      var r;
+      try { r = await native({ cmd: 'googleSignIn', clientId: cid, scope: gdScope }); } catch (e) { r = { error: String(e) }; }
+      if (r && r.access_token) {
+        gdSaveToken(r);
+        showToast('✅ تم ربط Google Drive');
+        gdShowSettings();
+        setTimeout(gdSync, 800);
+      } else {
+        showToast(gdErrText(r));
+      }
+    };
+
+    // قبل كل طلب لـ Drive: إن انتهى الرمز نجدده بصمت؛ وإن رجع 401 نجدده ونعيد المحاولة مرة
+    var webGdApi = window.gdApi;
+    if (typeof webGdApi === 'function') {
+      window.gdApi = async function (url, opts) {
+        if (!gdToken()) await silentRefresh();
+        try { return await webGdApi(url, opts); }
+        catch (e) {
+          if (e && e.signin && await silentRefresh()) return webGdApi(url, opts);
+          throw e;
+        }
+      };
+    }
+
+    // نص الإعداد يناسب التطبيق بدل رابط الرجوع
+    var webShow = window.gdShowSettings;
+    if (typeof webShow === 'function') {
+      window.gdShowSettings = function () {
+        webShow.apply(this, arguments);
+        var el = document.getElementById('gdRedirect');
+        if (el) el.textContent = 'iOS · Bundle ID: com.salha.scan';
+      };
+      window.gdRedirectUri = function () { return 'com.salha.scan'; };
+      try { window.gdShowSettings(); } catch (e) { }
+    }
+
+    // عند فتح التطبيق: إن كان هناك ربط سابق نجهّز رمزاً جديداً بصمت
+    silentRefresh().then(function (ok) { if (ok) { try { gdShowSettings(); } catch (e) { } } });
+  }
+
+  // ------------------------------------------------------------------
   // 3) المشاركة والحفظ: قائمة المشاركة الأصلية (فيها «حفظ في الملفات»)
   // ------------------------------------------------------------------
   async function nativeShare(data) {

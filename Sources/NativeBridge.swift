@@ -8,6 +8,7 @@ import Vision
 final class NativeBridge: NSObject, WKScriptMessageHandlerWithReply {
     private weak var host: WebViewController?
     private let scanner = Scanner()
+    private let google = GoogleAuth()
 
     init(host: WebViewController) { self.host = host }
 
@@ -44,6 +45,21 @@ final class NativeBridge: NSObject, WKScriptMessageHandlerWithReply {
             let files = (body["files"] as? [[String: Any]]) ?? []
             let text = body["text"] as? String
             share(files: files, text: text, reply: reply)
+
+        case "googleSignIn":
+            let cid = (body["clientId"] as? String) ?? ""
+            let scope = (body["scope"] as? String) ?? "https://www.googleapis.com/auth/drive.file"
+            DispatchQueue.main.async {
+                self.google.anchor = self.host?.view.window
+                self.google.signIn(clientId: cid, scope: scope) { reply($0) }
+            }
+
+        case "googleRefresh":
+            GoogleAuth.refresh(clientId: (body["clientId"] as? String) ?? "") { reply($0) }
+
+        case "googleSignOut":
+            GoogleAuth.signOut(clientId: (body["clientId"] as? String) ?? "")
+            reply(true)
 
         case "haptic":
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
