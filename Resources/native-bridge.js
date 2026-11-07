@@ -144,77 +144,104 @@
   }
 
   // ------------------------------------------------------------------
-  // 2.5) Google Drive: تسجيل الدخول داخل التطبيق (عميل iOS) + تجديد تلقائي
+  // 2.5) النسخ الاحتياطي على الـ NAS (FTP) بدل Google Drive
+  //      نعيد استخدام قائمة الانتظار والرفع التلقائي الموجودة في التطبيق
   // ------------------------------------------------------------------
-  if (typeof window.gdSignIn === 'function') {
-    var gdScope = (typeof GD_SCOPE !== 'undefined') ? GD_SCOPE : 'https://www.googleapis.com/auth/drive.file';
-    function gdSaveToken(r) {
-      scLs('gd_token', JSON.stringify({ v: r.access_token, exp: Date.now() + (Number(r.expires_in) || 3600) * 1000 }));
-    }
-    function gdErrText(r) {
-      var e = (r && r.error) || '';
-      if (e === 'bad_client') return 'الـ Client ID غير صحيح — يجب أن ينتهي بـ apps.googleusercontent.com (نوع iOS)';
-      if (e === 'canceled') return 'تم إلغاء الربط';
-      if (e === 'invalid_client' || e === 'unauthorized_client') return 'Google رفضت الـ Client ID — تأكد أن نوعه iOS وأن Bundle ID هو com.salha.scan';
-      return 'لم يتم ربط Google Drive' + (e ? ' (' + e + ')' : '');
-    }
-    var silentRefresh = async function () {
-      var cid = gdClientId();
-      if (!cid) return false;
-      try {
-        var r = await native({ cmd: 'googleRefresh', clientId: cid });
-        if (r && r.access_token) { gdSaveToken(r); return true; }
-      } catch (e) { }
-      return false;
-    };
+  if (typeof window.gdSync === 'function' && typeof window.gdPutPdf === 'function') {
+    var nas = { configured: false, folder: '' };
+    function nasFiles() { try { return JSON.parse(scLs('nas_files') || '{}') || {}; } catch (e) { return {}; } }
+
+    window.gdClientId = function () { return nas.configured ? 'nas' : ''; };
+    window.gdToken = function () { return nas.configured ? 'nas' : ''; };
+    window.gdFolder = async function () { return nas.folder || ''; };
+    window.gdCopyRedirect = function () { };
 
     window.gdSignIn = async function () {
-      var cid = gdClientId();
-      if (!cid) {
-        if (typeof switchMainTab === 'function') switchMainTab('me');
-        showToast('أدخل Client ID أولاً في «أنا» ← Google Drive');
-        return;
-      }
-      if (await silentRefresh()) { showToast('✅ Google Drive مربوط'); gdShowSettings(); setTimeout(gdSync, 500); return; }
-      var r;
-      try { r = await native({ cmd: 'googleSignIn', clientId: cid, scope: gdScope }); } catch (e) { r = { error: String(e) }; }
-      if (r && r.access_token) {
-        gdSaveToken(r);
-        showToast('✅ تم ربط Google Drive');
-        gdShowSettings();
-        setTimeout(gdSync, 800);
-      } else {
-        showToast(gdErrText(r));
-      }
+      try { nas = (await native({ cmd: 'nasSettings' })) || nas; } catch (e) { }
+      nasRelabel();
+      gdShowStatus();
+      if (nas.configured) setTimeout(gdSync, 500);
     };
 
-    // قبل كل طلب لـ Drive: إن انتهى الرمز نجدده بصمت؛ وإن رجع 401 نجدده ونعيد المحاولة مرة
-    var webGdApi = window.gdApi;
-    if (typeof webGdApi === 'function') {
-      window.gdApi = async function (url, opts) {
-        if (!gdToken()) await silentRefresh();
-        try { return await webGdApi(url, opts); }
-        catch (e) {
-          if (e && e.signin && await silentRefresh()) return webGdApi(url, opts);
-          throw e;
-        }
-      };
+    window.gdPutPdf = async function (doc, blob) {
+      var map = nasFiles();
+      var base = safeFileName(doc.title) || 'مستند';
+      var name = base + '.pdf';
+      // مستندان بنفس الاسم؟ نضيف جزءاً من رقم المستند حتى لا يستبدل أحدهما الآخر
+      var taken = Object.keys(map).some(function (k) { return k !== String(doc.id) && map[k] === name; });
+      if (taken) name = base + ' (' + String(doc.id).slice(-4) + ').pdf';
+      var b64 = await blobToBase64(blob);
+      var r = await native({ cmd: 'nasUpload', name: name, b64: b64, oldName: map[doc.id] || '' });
+      if (!r || !r.ok) throw new Error('رفع «' + doc.title + '» إلى الـ NAS فشل: ' + ((r && r.error) || ''));
+      map = nasFiles(); map[doc.id] = name; scLs('nas_files', JSON.stringify(map));
+    };
+
+    window.gdSaveSettings = function () {
+      var a = document.getElementById('gdAuto');
+      if (a) scLs('gd_auto', a.checked ? '1' : '0');
+      gdShowStatus();
+      showToast('تم الحفظ');
+    };
+
+    window.gdShowStatus = function () {
+      var el = document.getElementById('gdInfo');
+      if (!el) return;
+      var n = gdPending().size;
+      var busy = (typeof gdBusy !== 'undefined') && gdBusy;
+      el.textContent = busy ? 'جاري الرفع إلى الـ NAS…'
+        : !nas.configured ? 'غير مُعد — اضغط «إعدادات NAS»'
+          : (n ? n + ' بانتظار الرفع' : '✅ كل المستندات على الـ NAS') + (nas.folder ? ' · /' + nas.folder : '');
+      el.style.color = nas.configured && !n ? '#16a085' : (n ? '#d97706' : '#6b7280');
+    };
+
+    window.gdShowSettings = function () {
+      var a = document.getElementById('gdAuto');
+      if (a) a.checked = gdAuto();
+      nasRelabel();
+      gdShowStatus();
+    };
+
+    // نصوص الواجهة: Google Drive → الـ NAS
+    function nasRelabel() {
+      var box = document.getElementById('gdClientId');
+      var card = box && box.closest('.rounded-3xl');
+      if (card) {
+        var lbl = box.closest('label'); if (lbl) lbl.style.display = 'none';
+        var h = card.querySelector('h3'); if (h) h.textContent = 'النسخ الاحتياطي على الـ NAS';
+        var ic = card.querySelector('i.fa-google-drive'); if (ic) { ic.className = 'fa-solid fa-hard-drive'; }
+        card.querySelectorAll('button').forEach(function (b) {
+          if (b.textContent.trim() === 'ربط') b.textContent = 'إعدادات NAS';
+        });
+        var red = document.getElementById('gdRedirect');
+        var p = red && red.closest('p');
+        if (p) p.textContent = 'تُرفع المستندات كملفات PDF إلى مجلدك على قرص الـ FRITZ!Box عبر FTP، داخل شبكة البيت. المستندات المقفولة بكلمة سر لا تُرفع.';
+      }
     }
 
-    // نص الإعداد يناسب التطبيق بدل رابط الرجوع
-    var webShow = window.gdShowSettings;
-    if (typeof webShow === 'function') {
-      window.gdShowSettings = function () {
-        webShow.apply(this, arguments);
-        var el = document.getElementById('gdRedirect');
-        if (el) el.textContent = 'iOS · Bundle ID: com.salha.scan';
+    // كل نص «Google Drive» في التطبيق (قائمة المشاركة، الرسائل) يصير «الـ NAS»
+    var webToast = window.showToast;
+    if (typeof webToast === 'function') {
+      window.showToast = function (m) {
+        return webToast.call(this, String(m).replace(/Google Drive/g, 'الـ NAS').replace('☁️', '💾'));
       };
-      window.gdRedirectUri = function () { return 'com.salha.scan'; };
-      try { window.gdShowSettings(); } catch (e) { }
     }
+    new MutationObserver(function (list) {
+      list.forEach(function (m) {
+        m.addedNodes.forEach(function (n) {
+          if (n.nodeType !== 1) return;
+          var w = document.createTreeWalker(n, NodeFilter.SHOW_TEXT);
+          var t; while ((t = w.nextNode())) {
+            if (t.nodeValue.indexOf('Google Drive') >= 0) t.nodeValue = t.nodeValue.replace(/Google Drive/g, 'الـ NAS');
+          }
+        });
+      });
+    }).observe(document.body, { childList: true, subtree: true });
 
-    // عند فتح التطبيق: إن كان هناك ربط سابق نجهّز رمزاً جديداً بصمت
-    silentRefresh().then(function (ok) { if (ok) { try { gdShowSettings(); } catch (e) { } } });
+    native({ cmd: 'nasInfo' }).then(function (r) {
+      nas = r || nas;
+      gdShowSettings();
+      if (nas.configured && gdPending().size) setTimeout(gdSync, 3000);
+    }).catch(function () { gdShowSettings(); });
   }
 
   // ------------------------------------------------------------------

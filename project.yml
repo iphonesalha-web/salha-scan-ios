@@ -27,6 +27,9 @@ targets:
         NSCameraUsageDescription: "الكاميرا لازمة لمسح المستندات."
         NSPhotoLibraryUsageDescription: "لاستيراد الصور من مكتبة الصور وتحويلها إلى مستندات."
         NSPhotoLibraryAddUsageDescription: "لحفظ الصور المصدّرة في مكتبة الصور."
+        NSLocalNetworkUsageDescription: "لحفظ المستندات على قرص الـ FRITZ!Box في شبكة البيت."
+        NSBonjourServices:
+          - _ftp._tcp
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
         UISupportedInterfaceOrientations:
@@ -40,7 +43,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.salha.scan
         PRODUCT_NAME: SalhaScan
-        MARKETING_VERSION: "1.1"
+        MARKETING_VERSION: "1.2"
         CURRENT_PROJECT_VERSION: "1"
         TARGETED_DEVICE_FAMILY: "1,2"
         SWIFT_VERSION: "5.0"

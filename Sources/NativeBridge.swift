@@ -1,4 +1,5 @@
 import UIKit
+import SwiftUI
 import WebKit
 import VisionKit
 import Vision
@@ -60,6 +61,28 @@ final class NativeBridge: NSObject, WKScriptMessageHandlerWithReply {
         case "googleSignOut":
             GoogleAuth.signOut(clientId: (body["clientId"] as? String) ?? "")
             reply(true)
+
+        case "nasInfo":
+            reply(NASUploader.info())
+
+        case "nasSettings":
+            DispatchQueue.main.async {
+                guard let host = self.host else { reply(NASUploader.info()); return }
+                let vc = DismissAwareHostingController(rootView: AnyView(
+                    NASSettingsView().environment(\.layoutDirection, .rightToLeft)))
+                vc.onDismiss = { reply(NASUploader.info()) }
+                host.present(vc)
+            }
+
+        case "nasUpload":
+            guard let name = body["name"] as? String, !name.isEmpty,
+                  let b64 = body["b64"] as? String, let data = Data(base64Encoded: b64) else {
+                reply(["error": "ملف غير صالح"]); return
+            }
+            let old = body["oldName"] as? String
+            Task { @MainActor in
+                reply(await NASUploader.upload(name: name, data: data, oldName: old))
+            }
 
         case "haptic":
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
@@ -222,5 +245,18 @@ enum OCR {
         }
         let text = lines.compactMap { $0["text"] as? String }.joined(separator: "\n")
         return ["text": text, "lines": lines]
+    }
+}
+
+/// يخبرنا عندما تُغلق شاشة الإعدادات
+final class DismissAwareHostingController: UIHostingController<AnyView> {
+    var onDismiss: (() -> Void)?
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        if isBeingDismissed || presentingViewController == nil {
+            let f = onDismiss
+            onDismiss = nil
+            f?()
+        }
     }
 }
